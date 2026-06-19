@@ -1,0 +1,903 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: QR service attendance tracking API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication
+  - name: users
+    description: Service user management
+  - name: sessions
+    description: QR check-in/check-out session management
+  - name: accounts
+    description: Staff account management (admin only)
+  - name: positions
+    description: Job position/title (직위) management (admin only)
+  - name: audit-logs
+    description: Admin audit log records (admin only)
+paths:
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout current session
+      responses:
+        "200":
+          description: Logged out
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Not authenticated
+
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid input
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get a user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserInput"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid input
+        "404":
+          description: User not found
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List sessions with optional filters and pagination
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter by date (YYYY-MM-DD)"
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+          description: "Filter by user ID"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+            minimum: 1
+            maximum: 200
+          description: "Max entries to return (default 50)"
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+            minimum: 0
+          description: "Offset for pagination (default 0)"
+      responses:
+        "200":
+          description: Paginated list of sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPage"
+
+  /sessions/summary:
+    get:
+      operationId: getSessionsSummary
+      tags: [sessions]
+      summary: Get aggregated session statistics by date
+      responses:
+        "200":
+          description: Daily session summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailySummary"
+
+  /sessions/weekly-export.xlsx:
+    get:
+      operationId: exportWeeklySummary
+      tags: [sessions]
+      summary: Download the weekly attendance summary as an Excel workbook (admin only)
+      parameters:
+        - name: weekStart
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Any date (YYYY-MM-DD) within the desired week; snapped to that week's Monday (KST). Defaults to the current week."
+      responses:
+        "200":
+          description: Excel workbook (.xlsx)
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid weekStart
+        "403":
+          description: Admin only
+
+  /sessions/mine:
+    get:
+      operationId: getMySessions
+      tags: [sessions]
+      summary: Get sessions belonging to the currently logged-in user
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter by date (YYYY-MM-DD)"
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter by month (YYYY-MM)"
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Range start date inclusive (YYYY-MM-DD)"
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Range end date inclusive (YYYY-MM-DD)"
+      responses:
+        "200":
+          description: Current user's sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+
+  /sessions/today:
+    get:
+      operationId: getTodaySessions
+      tags: [sessions]
+      summary: Get all sessions for today
+      responses:
+        "200":
+          description: Today's sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+
+  /sessions/checkin:
+    post:
+      operationId: checkIn
+      tags: [sessions]
+      summary: QR code check-in (start a session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInInput"
+      responses:
+        "201":
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Already checked in
+
+  /sessions/checkout:
+    post:
+      operationId: checkOut
+      tags: [sessions]
+      summary: QR code check-out (end a session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckOutInput"
+      responses:
+        "200":
+          description: Session ended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Not checked in
+
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get a session by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "404":
+          description: Session not found
+    delete:
+      operationId: deleteSession
+      tags: [sessions]
+      summary: Delete a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /accounts:
+    get:
+      operationId: listAccounts
+      tags: [accounts]
+      summary: List all accounts (admin only)
+      responses:
+        "200":
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Account"
+    post:
+      operationId: createAccount
+      tags: [accounts]
+      summary: Create a new account (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountInput"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          description: Invalid input or duplicate username
+        "403":
+          description: Admin only
+
+  /accounts/{id}:
+    patch:
+      operationId: updateAccount
+      tags: [accounts]
+      summary: Update an account's display name (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountInput"
+      responses:
+        "200":
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          description: Invalid input
+        "403":
+          description: Admin only
+        "404":
+          description: Account not found
+    delete:
+      operationId: deleteAccount
+      tags: [accounts]
+      summary: Delete an account (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Admin only or cannot delete last admin / self
+        "404":
+          description: Account not found
+
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [audit-logs]
+      summary: List audit log entries with filters and pagination (admin only)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+            minimum: 1
+            maximum: 200
+          description: "Max entries to return (default 50)"
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+            minimum: 0
+          description: "Offset for pagination (default 0)"
+        - name: actorId
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+          description: "Filter by actor account id"
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter by exact action name"
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter entries with createdAt >= this ISO timestamp"
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter entries with createdAt <= this ISO timestamp"
+      responses:
+        "200":
+          description: Paginated list of audit log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPage"
+        "403":
+          description: Admin only
+
+  /audit-logs/export.csv:
+    get:
+      operationId: exportAuditLogs
+      tags: [audit-logs]
+      summary: Download filtered audit log entries as a CSV file (admin only)
+      parameters:
+        - name: actorId
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+          description: "Filter by actor account id"
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter by exact action name"
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter entries with createdAt >= this ISO timestamp"
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+          description: "Filter entries with createdAt <= this ISO timestamp"
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: Admin only
+
+  /accounts/{id}/password:
+    put:
+      operationId: changePassword
+      tags: [accounts]
+      summary: Change account password (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordInput"
+      responses:
+        "204":
+          description: Password changed
+        "403":
+          description: Admin only
+        "400":
+          description: Invalid input
+
+  /positions:
+    get:
+      operationId: listPositions
+      tags: [positions]
+      summary: List all positions (admin only)
+      responses:
+        "200":
+          description: List of positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Position"
+        "403":
+          description: Admin only
+    post:
+      operationId: createPosition
+      tags: [positions]
+      summary: Create a new position (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PositionInput"
+      responses:
+        "201":
+          description: Position created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Position"
+        "400":
+          description: Invalid input or duplicate name
+        "403":
+          description: Admin only
+
+  /positions/{id}:
+    delete:
+      operationId: deletePosition
+      tags: [positions]
+      summary: Delete a position (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Admin only
+        "404":
+          description: Position not found
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    User:
+      type: object
+      required: [id, name, qrCode, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        note:
+          type: ["string", "null"]
+        qrCode:
+          type: string
+        accountId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+
+    UserInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        note:
+          type: string
+        accountId:
+          type: ["integer", "null"]
+
+    UpdateUserInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        note:
+          type: ["string", "null"]
+        accountId:
+          type: ["integer", "null"]
+
+    Session:
+      type: object
+      required: [id, userId, userName, date, startTime, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        userName:
+          type: string
+        date:
+          type: string
+          description: "YYYY-MM-DD"
+        startTime:
+          type: string
+          description: "HH:MM:SS"
+        endTime:
+          type: ["string", "null"]
+          description: "HH:MM:SS"
+        durationMinutes:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+
+    SessionPage:
+      type: object
+      required: [total, items]
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+
+    CheckInInput:
+      type: object
+      required: [qrCode]
+      properties:
+        qrCode:
+          type: string
+
+    CheckOutInput:
+      type: object
+      required: [qrCode]
+      properties:
+        qrCode:
+          type: string
+
+    LoginInput:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+
+    AuthUser:
+      type: object
+      required: [id, displayName, role]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [admin, staff]
+        passwordUpdatedAt:
+          type: ["string", "null"]
+          description: "ISO timestamp of last password change. Used to surface 90-day rotation reminder."
+
+    Account:
+      type: object
+      required: [id, username, displayName, role, createdAt]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [admin, staff]
+        position:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    UpdateAccountInput:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+        position:
+          type: ["string", "null"]
+
+    CreateAccountInput:
+      type: object
+      required: [username, password, displayName]
+      properties:
+        username:
+          type: string
+          minLength: 2
+        password:
+          type: string
+          minLength: 6
+          description: "최소 6자 이상"
+        displayName:
+          type: string
+          minLength: 1
+        role:
+          type: string
+          enum: [admin, staff]
+          default: staff
+        position:
+          type: ["string", "null"]
+
+    Position:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        createdAt:
+          type: string
+
+    PositionInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+
+    AuditLogPage:
+      type: object
+      required: [total, items]
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+
+    AuditLogEntry:
+      type: object
+      required: [id, action, targetType, createdAt]
+      properties:
+        id:
+          type: integer
+        actorId:
+          type: ["integer", "null"]
+        actorUsername:
+          type: ["string", "null"]
+        action:
+          type: string
+          enum: [account.create, account.update, account.delete, account.password_change, auth.login_success, auth.login_failure]
+        targetType:
+          type: string
+        targetId:
+          type: ["integer", "null"]
+        details:
+          type: ["object", "null"]
+          additionalProperties: true
+        createdAt:
+          type: string
+
+    ChangePasswordInput:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 6
+          description: "최소 6자 이상, 최근 3개 비밀번호와 중복 불가"
+
+    DailySummary:
+      type: object
+      required: [date, totalSessions, completedSessions, activeSessions, avgDurationMinutes]
+      properties:
+        date:
+          type: string
+        totalSessions:
+          type: integer
+        completedSessions:
+          type: integer
+        activeSessions:
+          type: integer
+        avgDurationMinutes:
+          type: ["integer", "null"]
